@@ -21,36 +21,19 @@ public class RefreshTokenInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
-        // 获取session
-//        HttpSession session = request.getSession();
-
         // 修改： 从请求头中获取token
         String token = request.getHeader("authorization");
 
         if (StrUtil.isBlank(token)) {
-            // 401 就是未授权的意思
-            response.setStatus(401);
-            return false;
+            // 交给后面的拦截器拦截
+            return true;
         }
-        // 获取session中的用户
-//        Object user = session.getAttribute("user");
-        // 判断用户是否存在
-//        if (user == null) {
-//            // 不存在拦截
-//            // 跳转到登录页面
-//            // response.sendRedirect("/login.html");
-//            // 401 就是未授权的意思
-//            response.setStatus(401);
-//            return false;
-//        }
         // 修改：从redis中获取用户
         Map<Object, Object> userMap = stringRedisTemplate.opsForHash().entries(RedisConstants.LOGIN_USER_KEY + token);
         if (userMap.isEmpty()) {
-            // 401 就是未授权的意思
-            response.setStatus(401);
-            return false;
+            // 交给后面的拦截器拦截
+            return true;
         }
-
         // 从redis取的是hash，我们需要转化为userDto
         UserDTO userDTO = BeanUtil.fillBeanWithMap(userMap, new UserDTO(), false);
         // 存在保存到threadLocal
