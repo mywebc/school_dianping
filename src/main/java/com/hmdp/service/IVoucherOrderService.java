@@ -18,4 +18,6 @@ public interface IVoucherOrderService extends IService<VoucherOrder> {
     @Transactional
         // 涉及两张表， 加上事务
     Result seckillVoucher(Long voucherId);
+
+    Result createVoucherOrder(Long voucherId);
 }
