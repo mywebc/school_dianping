@@ -1,5 +1,6 @@
 package com.hmdp.utils;
 
+import cn.hutool.core.lang.UUID;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.util.concurrent.TimeUnit;
@@ -15,19 +16,42 @@ public class SimpleRedisLock implements ILock {
     }
 
     private static final String kEY_PREFIX = "lock:";
+    private static final String ID_PREFIX = UUID.randomUUID().toString(true) + "-";
 
     @Override
     public boolean tryLock(long timeSec) {
-        // 线程id
-        long threadId = Thread.currentThread().getId();
+        // 线程id - 修改为用UUID来拼接（因为不同服务器上的线程id有可能一样）
+        String threadId = ID_PREFIX + Thread.currentThread().getId();
         // 获取锁, 注意这里的value要有线程的id来作标识
-        Boolean success = stringRedisTemplate.opsForValue().setIfAbsent(kEY_PREFIX + name, threadId + "", timeSec, TimeUnit.SECONDS);
+        Boolean success = stringRedisTemplate.opsForValue().setIfAbsent(kEY_PREFIX + name, threadId, timeSec, TimeUnit.SECONDS);
         // 这里会发生拆箱，有可能会有问题， 所以下面这么写为了防止出问题
         return Boolean.TRUE.equals(success);
     }
 
+    //
     @Override
     public void unLock() {
-        stringRedisTemplate.delete(kEY_PREFIX + name);
+        // 获取线程id
+        String threadId = ID_PREFIX + Thread.currentThread().getId();
+        // 获取当前的锁的标识
+        String id = stringRedisTemplate.opsForValue().get(kEY_PREFIX + name);
+
+        if (threadId.equals(id)) {
+            // 标识一样才删除锁
+            stringRedisTemplate.delete(kEY_PREFIX + name);
+        }
     }
+
+//    @Override
+//    public void unLock() {
+//        // 获取线程id
+//        String threadId = ID_PREFIX + Thread.currentThread().getId();
+//        // 获取当前的锁的标识
+//        String id = stringRedisTemplate.opsForValue().get(kEY_PREFIX + name);
+//
+//        if (threadId.equals(id)) {
+//            // 标识一样才删除锁
+//            stringRedisTemplate.delete(kEY_PREFIX + name);
+//        }
+//    }
 }
