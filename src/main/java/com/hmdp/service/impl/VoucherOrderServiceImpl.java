@@ -8,8 +8,10 @@ import com.hmdp.service.ISeckillVoucherService;
 import com.hmdp.service.IVoucherOrderService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.utils.RedisIdWorker;
+import com.hmdp.utils.SimpleRedisLock;
 import com.hmdp.utils.UserHolder;
 import org.springframework.aop.framework.AopContext;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,6 +35,9 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     @Resource
     private RedisIdWorker redisIdWorker;
 
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
+
     @Override
     public Result seckillVoucher(Long voucherId) {
         // 1. 查询优惠券
@@ -52,20 +57,37 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
         Long userId = UserHolder.getUser().getId();
         // userId.toString().intern() 这样是为了保证锁的唯一性（保证当用户的id一样, 锁就一样）
-        synchronized (userId.toString().intern()) {
-            // 获取代理对象， 通过代理对象调用createVoucherOrder方法， 这样就会走事务， 保证事务的一致性
-            // 为了获取成功代理对象， pom要引入aspectjweaver, 而且启动类要加上@EnableAspectJAutoProxy(exposeProxy = true)
-            IVoucherOrderService proxy = (IVoucherOrderService) AopContext.currentProxy();
-            return proxy.createVoucherOrder(voucherId);
-
-            //return this.createVoucherOrder(voucherId)
-            // 上面这么写this指的是当前对象， 事务要想生效必须代理对象调用， 不能直接调用， 代理对象调用会走事务
-            // 但是这里this指的是当前对象， 代理对象是在spring容器中的， 所以这里直接调用不会走事务
-            // 所以这里要获取代理对象， 通过代理对象调用createVoucherOrder方法， 这样就会走事务， 保证事务的一致性
-        }
+//        synchronized (userId.toString().intern()) {
+//            // 获取代理对象， 通过代理对象调用createVoucherOrder方法， 这样就会走事务， 保证事务的一致性
+//            // 为了获取成功代理对象， pom要引入aspectjweaver, 而且启动类要加上@EnableAspectJAutoProxy(exposeProxy = true)
+//            IVoucherOrderService proxy = (IVoucherOrderService) AopContext.currentProxy();
+//            return proxy.createVoucherOrder(voucherId);
+//
+//            //return this.createVoucherOrder(voucherId)
+//            // 上面这么写this指的是当前对象， 事务要想生效必须代理对象调用， 不能直接调用， 代理对象调用会走事务
+//            // 但是这里this指的是当前对象， 代理对象是在spring容器中的， 所以这里直接调用不会走事务
+//            // 所以这里要获取代理对象， 通过代理对象调用createVoucherOrder方法， 这样就会走事务， 保证事务的一致性
+//        }
 
         // 这里这个锁为什么要加在函数外面？，为了保证函数执行完， 事务已经提交了，才释放锁，
         // 如果加在函数里面， 事务还没提交，锁就释放了， 这样就会出现问题（其他线程可能就会进来）
+
+        // 下面是手动实现锁的版本
+        // 创建锁的对象
+        SimpleRedisLock simpleRedisLock = new SimpleRedisLock("order" + userId, stringRedisTemplate);
+        // 尝试获取锁
+        boolean isLock = simpleRedisLock.tryLock(1200);
+        if (!isLock) {
+            return Result.fail("一人只抢一单，请勿重复抢购");
+        }
+        try {
+            // 获取代理对象
+            IVoucherOrderService proxy = (IVoucherOrderService) AopContext.currentProxy();
+            return proxy.createVoucherOrder(voucherId);
+        } finally {
+            // 释放锁
+            simpleRedisLock.unLock();
+        }
     }
 
     @Transactional
