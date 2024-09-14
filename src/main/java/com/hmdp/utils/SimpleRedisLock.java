@@ -21,7 +21,7 @@ public class SimpleRedisLock implements ILock {
     private static final String kEY_PREFIX = "lock:";
     private static final String ID_PREFIX = UUID.randomUUID().toString(true) + "-";
     private static final DefaultRedisScript<Long> UNLOCK_SCRIPT;
-
+    // 静态加载
     static {
         UNLOCK_SCRIPT = new DefaultRedisScript<>();
         // 指定位置
