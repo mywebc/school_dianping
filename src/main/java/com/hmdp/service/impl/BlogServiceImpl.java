@@ -53,8 +53,9 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
         Long userId = UserHolder.getUser().getId();
         // 先去redis的set集合里看是否有当前用户
         String key = "blog:liked:" + blog.getId();
-        Boolean isMember = stringRedisTemplate.opsForSet().isMember(key, userId.toString());
-        blog.setIsLike(BooleanUtil.isTrue(isMember));
+//        Boolean isMember = stringRedisTemplate.opsForSet().isMember(key, userId.toString());
+        Double score = stringRedisTemplate.opsForZSet().score(key, userId.toString());
+        blog.setIsLike(score != null);
     }
 
     @Override
@@ -81,18 +82,27 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
         // 查看当前登录用户是否点赞
         // 先去redis的set集合里看是否有当前用户
         String key = "blog:liked:" + id;
-        Boolean isMember = stringRedisTemplate.opsForSet().isMember(key, userId.toString());
-        if (BooleanUtil.isFalse(isMember)) {
+        // 从set取值
+//        Boolean isMember = stringRedisTemplate.opsForSet().isMember(key, userId.toString());
+        // 优化： 从Zset取值
+        Double score = stringRedisTemplate.opsForZSet().score(key, userId.toString());
+        if (score == null) {
             // 如果没有，说明没有点赞，数据库需要+1，redis需要添加
             boolean isSuccess = update().setSql("liked = liked + 1").eq("id", id).update();
             if (isSuccess) {
-                stringRedisTemplate.opsForSet().add(key, userId.toString());
+                // 存到set
+//                stringRedisTemplate.opsForSet().add(key, userId.toString());
+                // 优化：存到zset, 分数用时间戳  zadd key value score
+                stringRedisTemplate.opsForZSet().add(key, userId.toString(), System.currentTimeMillis());
             }
         } else {
             // 如果有，说明已经点赞，数据库需要-1，redis需要删除
             boolean isSuccess = update().setSql("liked = liked - 1").eq("id", id).update();
             if (isSuccess) {
-                stringRedisTemplate.opsForSet().remove(key, userId.toString());
+                // 删除
+//                stringRedisTemplate.opsForSet().remove(key, userId.toString());
+                // 优化：从zset删除, 分数用时间戳  zadd key value score
+                stringRedisTemplate.opsForZSet().remove(key, userId.toString());
             }
         }
         return Result.ok();
