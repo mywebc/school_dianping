@@ -2,21 +2,27 @@ package com.hmdp.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.BooleanUtil;
+import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hmdp.dto.Result;
+import com.hmdp.dto.UserDTO;
 import com.hmdp.entity.Blog;
 import com.hmdp.entity.User;
 import com.hmdp.mapper.BlogMapper;
 import com.hmdp.service.IBlogService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.service.IUserService;
+import com.hmdp.utils.RedisConstants;
 import com.hmdp.utils.SystemConstants;
 import com.hmdp.utils.UserHolder;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * <p>
@@ -50,6 +56,11 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
     }
 
     private void isBlogLiked(Blog blog) {
+        UserDTO user = UserHolder.getUser();
+        if (user == null) {
+            // 用户不登录，不需要查询
+            return;
+        }
         Long userId = UserHolder.getUser().getId();
         // 先去redis的set集合里看是否有当前用户
         String key = "blog:liked:" + blog.getId();
@@ -81,7 +92,7 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
         Long userId = UserHolder.getUser().getId();
         // 查看当前登录用户是否点赞
         // 先去redis的set集合里看是否有当前用户
-        String key = "blog:liked:" + id;
+        String key = RedisConstants.BLOG_LIKED_KEY + id;
         // 从set取值
 //        Boolean isMember = stringRedisTemplate.opsForSet().isMember(key, userId.toString());
         // 优化： 从Zset取值
@@ -106,6 +117,33 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
             }
         }
         return Result.ok();
+    }
+
+    @Override
+    public Result queryBlogLikes(Long id) {
+        String key = RedisConstants.BLOG_LIKED_KEY + id;
+        // 查询top5的点赞用户（根据zset）
+        Set<String> top = stringRedisTemplate.opsForZSet().range(key, 0, 4);
+        if (top == null || top.isEmpty()) {
+            return Result.ok(Collections.emptyList());
+        }
+        // 解析出用户id
+        List<Long> ids = top.stream().map(Long::valueOf).collect(Collectors.toList());
+        // 再根据用户id查询用户信息
+//        List<UserDTO> userDTOS = userService.listByIds(ids)
+//                .stream()
+//                .map(user -> BeanUtil.copyProperties(user, UserDTO.class))
+//                .collect(Collectors.toList());
+        String idStr = StrUtil.join(",", ids);
+        // 我们要修改sql语句，我们要加orderByField
+        List<UserDTO> userDTOS = userService.query()
+                .in("id", ids)
+                .last("ORDER BY FIELD(id, " + idStr + ")").list()
+                .stream()
+                .map(user -> BeanUtil.copyProperties(user, UserDTO.class))
+                .collect(Collectors.toList());
+        // 返回用户信息
+        return Result.ok(userDTOS);
     }
 
     private void queryBlogUser(Blog blog) {
