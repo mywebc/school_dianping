@@ -22,6 +22,8 @@ import org.springframework.stereotype.Service;
 import javax.annotation.Resource;
 import javax.servlet.http.HttpSession;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -106,6 +108,22 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         stringRedisTemplate.expire(RedisConstants.LOGIN_USER_KEY + token, RedisConstants.LOGIN_USER_TTL, TimeUnit.MINUTES);
         // 6.3 返回token到客户端
         return Result.ok(token);
+    }
+
+    @Override
+    public Result sign() {
+        // 1. 获取当前登录用户
+        Long userId = UserHolder.getUser().getId();
+        // 2. 获取当前日期
+        LocalDateTime now = LocalDateTime.now();
+        // 3. 拼接key
+        String keySuffix = now.format(DateTimeFormatter.ofPattern(":yyyyMM"));
+        String key = RedisConstants.USER_SIGN_KEY + userId + keySuffix;
+        // 4. 获取今天是本月的第几天
+        int dayOfMonth = now.getDayOfMonth();
+        // 5. 写入redis  setbit key offset value 这里要减1， 就是0-30
+        stringRedisTemplate.opsForValue().setBit(key, dayOfMonth - 1, true);
+        return Result.ok();
     }
 
     private User createUserWithPhone(String phone) {
