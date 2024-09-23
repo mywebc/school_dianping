@@ -63,4 +63,21 @@ class HmDianPingApplicationTests {
         }
     }
 
+    @Test
+    void testHyperLogLog() {
+        String[] values = new String[1000];
+        int j = 0;
+        for (int i = 0; i < 1000000; i++) {
+            j = i % 1000;
+            values[j] = "user" + i;
+            if (j == 999) {
+                // 一次性添加1000个元素
+                stringRedisTemplate.opsForHyperLogLog().add("hl2", values);
+            }
+        }
+        // 统计数量
+        Long count = stringRedisTemplate.opsForHyperLogLog().size("hl2");
+        System.out.println("count" + count);
+    }
+
 }
